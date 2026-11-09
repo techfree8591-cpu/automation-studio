@@ -1,0 +1,53 @@
+name: Automation Studio 24/7 Cloud Autopilot
+
+on:
+  schedule:
+    # Runs 3 times a day at 10:00, 15:00, 18:00 UTC (customizable in config)
+    - cron: '0 4 * * *'   # 09:30 AM IST
+    - cron: '0 9 * * *'   # 02:30 PM IST
+    - cron: '0 12 * * *'  # 05:30 PM IST
+  workflow_dispatch:      # Allows instant 1-click posting from mobile or GitHub
+
+jobs:
+  post-reel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Python 3
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install System & Playwright Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          npm install
+          npx playwright install --with-deps chromium
+          pip install gdown
+
+      - name: Run Cloud Automation Post Runner
+        env:
+          HEADLESS: "true"
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          xvfb-run --auto-servernum -- node src/run_daily.mjs
+
+      - name: Commit & Push Updated History
+        run: |
+          git config --global user.name "Automation Studio Cloud Bot"
+          git config --global user.email "bot@automation-studio.pro"
+          git add state/history.json state/metadata_overrides.json
+          git diff --quiet && git diff --staged --quiet || (git commit -m "chore(history): auto-record posted reel [skip ci]" && git push)

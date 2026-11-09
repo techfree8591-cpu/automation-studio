@@ -1,0 +1,42 @@
+{
+  "accountEmail": "lokesh30.07.2009@gmail.com",
+  "driveFolderUrl": "https://drive.google.com/drive/folders/1sfMWWJsjGV2BZ9AXHcMLd8M9fzkqTtc8?usp=sharing",
+  "driveFolderId": "1sfMWWJsjGV2BZ9AXHcMLd8M9fzkqTtc8",
+  "niche": "anime",
+  "authPin": "2009",
+  "apiKeys": {
+    "provider": "gemini",
+    "gemini": "",
+    "openai": "",
+    "claude": ""
+  },
+  "postsPerDay": 3,
+  "postTimes": [
+    "10:00",
+    "15:00",
+    "18:00"
+  ],
+  "reelsDir": "./reels",
+  "browserProfileDir": "./browser_profile",
+  "platforms": {
+    "youtube": true,
+    "instagram": true
+  },
+  "hashtags": [
+    "#anime",
+    "#animereels",
+    "#animeedit",
+    "#animeedits",
+    "#otaku",
+    "#animecommunity",
+    "#amv",
+    "#animelover",
+    "#animefandom",
+    "#weeb",
+    "#animefans",
+    "#animemoments",
+    "#animescenes",
+    "#fyp",
+    "#viral"
+  ]
+}

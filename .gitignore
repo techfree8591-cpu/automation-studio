@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Local Browser Profile & Credentials
+browser_profile/
+*.log
+instagram_debug.png
+logs/
+.env
+state/
+
+# Large Video Files & Cache
+reels/
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.zip
+dist/
+cloudflared.exe
