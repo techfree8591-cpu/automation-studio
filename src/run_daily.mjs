@@ -110,11 +110,21 @@ async function run() {
   log(`[*] YouTube Title: "${metadata.youtube.title}"`);
 
   // Clear any lockfile and zombie processes before opening context
+  if (process.platform === 'win32') {
+    try {
+      const { execSync } = await import('child_process');
+      execSync('powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like \\"*automation\\\\browser_profile*\\" -and $_.ProcessId -ne $PID } | Stop-Process -Force -ErrorAction SilentlyContinue"', { stdio: 'ignore' });
+    } catch (_) {}
+  }
+
   try {
-    const lockfile = path.join(BROWSER_PROFILE, 'lockfile');
-    const singletonLock = path.join(BROWSER_PROFILE, 'SingletonLock');
-    if (fs.existsSync(lockfile)) fs.unlinkSync(lockfile);
-    if (fs.existsSync(singletonLock)) fs.unlinkSync(singletonLock);
+    const lockFiles = ['lockfile', 'SingletonLock', 'SingletonCookie', 'SingletonSocket'];
+    for (const lf of lockFiles) {
+      const p = path.join(BROWSER_PROFILE, lf);
+      if (fs.existsSync(p)) {
+        try { fs.unlinkSync(p); } catch (_) {}
+      }
+    }
   } catch (_) {}
 
   // 2. Launch Browser with Persistent Profile
