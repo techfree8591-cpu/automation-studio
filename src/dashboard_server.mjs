@@ -33,17 +33,25 @@ const PORT = 4000;
 const HOST = '0.0.0.0'; // Listen on all network interfaces for Android / Mac / Windows
 const LOCAL_IP = '192.168.29.58';
 
+const AUTH_STATUS_FILE = path.join(ROOT_DIR, 'state', 'auth_status.json');
+
 let isJobRunning = false;
 let lastJobOutput = '';
 let connectionCache = {
-  youtube: true,
-  youtubeChannel: '@eclipsarchon',
-  youtubeChannelId: 'UCe0cSCqjlSFoppdb0DR2uxQ',
-  instagram: true,
-  instagramUsername: 'eclipsarchon',
-  accountEmail: 'lokesh30.07.2009@gmail.com',
+  youtube: false,
+  youtubeChannel: '',
+  youtubeChannelId: '',
+  instagram: false,
+  instagramUsername: '',
+  accountEmail: '',
   lastChecked: new Date().toISOString()
 };
+
+try {
+  if (fs.existsSync(AUTH_STATUS_FILE)) {
+    connectionCache = { ...connectionCache, ...JSON.parse(fs.readFileSync(AUTH_STATUS_FILE, 'utf-8')) };
+  }
+} catch (_) {}
 let isLoginActive = false;
 
 function loadConfig() {
@@ -225,10 +233,11 @@ const server = http.createServer(async (req, res) => {
     try {
       const data = await readJson();
       const platform = data.platform || 'all';
+      const mode = data.mode || 'login';
 
-      console.log(`[*] Opening login browser for platform: ${platform}`);
+      console.log(`[*] Opening login browser for platform: ${platform} (mode: ${mode})`);
       isLoginActive = true;
-      const child = spawn('node', ['src/login_browser.mjs', platform], {
+      const child = spawn('node', ['src/login_browser.mjs', platform, mode], {
         cwd: ROOT_DIR,
         detached: true,
         stdio: 'ignore'
@@ -244,9 +253,134 @@ const server = http.createServer(async (req, res) => {
       child.unref();
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, message: `Opened login window for ${platform}!` }));
+      res.end(JSON.stringify({ success: true, message: `Opened login window for ${platform} (${mode})!` }));
     } catch (err) {
       isLoginActive = false;
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  // 3b. POST /api/disconnect-platform
+  if (url.pathname === '/api/disconnect-platform' && req.method === 'POST') {
+    try {
+      const data = await readJson();
+      const platform = (data.platform || 'all').toLowerCase();
+      let authData = {
+        youtube: false,
+        youtubeChannel: '',
+        youtubeChannelId: '',
+        instagram: false,
+        instagramUsername: '',
+        accountEmail: '',
+        lastVerified: new Date().toISOString(),
+        status: 'disconnected'
+      };
+      if (fs.existsSync(AUTH_STATUS_FILE)) {
+        try { authData = JSON.parse(fs.readFileSync(AUTH_STATUS_FILE, 'utf-8')); } catch (_) {}
+      }
+
+      if (platform === 'youtube') {
+        authData.youtube = false;
+        authData.youtubeChannel = '';
+        authData.youtubeChannelId = '';
+      } else if (platform === 'instagram') {
+        authData.instagram = false;
+        authData.instagramUsername = '';
+      } else {
+        authData.youtube = false;
+        authData.youtubeChannel = '';
+        authData.youtubeChannelId = '';
+        authData.instagram = false;
+        authData.instagramUsername = '';
+        authData.accountEmail = '';
+      }
+      authData.status = (authData.youtube || authData.instagram) ? 'connected' : 'disconnected';
+      authData.lastVerified = new Date().toISOString();
+
+      fs.writeFileSync(AUTH_STATUS_FILE, JSON.stringify(authData, null, 2), 'utf-8');
+      connectionCache = { ...authData, lastChecked: new Date().toISOString() };
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, auth: connectionCache }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  // 3c. POST /api/update-account-info
+  if (url.pathname === '/api/update-account-info' && req.method === 'POST') {
+    try {
+      const data = await readJson();
+      let authData = {
+        youtube: false,
+        youtubeChannel: '',
+        youtubeChannelId: '',
+        instagram: false,
+        instagramUsername: '',
+        accountEmail: '',
+        lastVerified: new Date().toISOString(),
+        status: 'disconnected'
+      };
+      if (fs.existsSync(AUTH_STATUS_FILE)) {
+        try { authData = JSON.parse(fs.readFileSync(AUTH_STATUS_FILE, 'utf-8')); } catch (_) {}
+      }
+
+      if (data.youtubeChannel !== undefined) authData.youtubeChannel = data.youtubeChannel;
+      if (data.instagramUsername !== undefined) authData.instagramUsername = data.instagramUsername;
+      if (data.accountEmail !== undefined) authData.accountEmail = data.accountEmail;
+
+      if (authData.youtubeChannel) authData.youtube = true;
+      if (authData.instagramUsername) authData.instagram = true;
+      authData.status = (authData.youtube || authData.instagram) ? 'connected' : 'disconnected';
+      authData.lastVerified = new Date().toISOString();
+
+      fs.writeFileSync(AUTH_STATUS_FILE, JSON.stringify(authData, null, 2), 'utf-8');
+      connectionCache = { ...authData, lastChecked: new Date().toISOString() };
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, auth: connectionCache }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  // 3d. POST /api/reset-browser-profile
+  if (url.pathname === '/api/reset-browser-profile' && req.method === 'POST') {
+    try {
+      try {
+        execSync('powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like \\"*automation\\\\browser_profile*\\" } | Stop-Process -Force -ErrorAction SilentlyContinue"', { stdio: 'ignore' });
+      } catch (_) {}
+
+      // Delete browser_profile directory
+      if (fs.existsSync(BROWSER_PROFILE)) {
+        try {
+          fs.rmSync(BROWSER_PROFILE, { recursive: true, force: true });
+        } catch (_) {}
+      }
+
+      // Reset auth status
+      const authData = {
+        youtube: false,
+        youtubeChannel: '',
+        youtubeChannelId: '',
+        instagram: false,
+        instagramUsername: '',
+        accountEmail: '',
+        lastVerified: new Date().toISOString(),
+        status: 'not_connected'
+      };
+      fs.writeFileSync(AUTH_STATUS_FILE, JSON.stringify(authData, null, 2), 'utf-8');
+      connectionCache = { ...authData, lastChecked: new Date().toISOString() };
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, auth: connectionCache }));
+    } catch (err) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
     }
@@ -671,18 +805,21 @@ function renderDashboardHtml() {
 
       <!-- Section 1: Visual Account Connection Cards with Official Icons -->
       <div class="glass-card rounded-2xl p-5 sm:p-6 space-y-4">
-        <div class="flex items-center justify-between border-b border-slate-800/80 pb-3">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-800/80 pb-3 gap-3">
           <div>
             <h2 class="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
               <span>🔗</span> Account Connection & Verification
             </h2>
-            <p class="text-xs text-slate-400 mt-0.5">Live status of your YouTube Shorts and Instagram Reels channels</p>
+            <p class="text-xs text-slate-400 mt-0.5">Live status and account switcher for YouTube Shorts and Instagram Reels</p>
           </div>
-          <div class="flex items-center gap-2">
-            <button onclick="connectPlatform('all')" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md transition-all">
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="connectPlatform('all', 'login')" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md transition-all">
               ⚡ Connect Both Channels
             </button>
-            <button onclick="reverifyConnections()" class="text-xs text-brand-cyan hover:underline font-semibold ml-2">
+            <button onclick="connectPlatform('all', 'switch')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 transition-all" title="Open account switcher for both">
+              🔄 Switch Accounts
+            </button>
+            <button onclick="reverifyConnections()" class="text-xs text-brand-cyan hover:underline font-semibold ml-1">
               Refresh Status
             </button>
           </div>
@@ -691,7 +828,7 @@ function renderDashboardHtml() {
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           
           <!-- YouTube Studio Card -->
-          <div id="ytCard" class="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-emerald-500/30 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div id="ytCard" class="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-slate-800 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div class="flex items-center gap-3.5">
               <!-- Official YouTube Icon -->
               <div class="w-12 h-12 rounded-2xl bg-red-600/10 border border-red-500/20 text-red-500 flex items-center justify-center shrink-0">
@@ -702,24 +839,32 @@ function renderDashboardHtml() {
               <div>
                 <h3 class="text-sm font-bold text-white flex items-center gap-1.5">
                   <span>YouTube Studio (Shorts)</span>
-                  <span id="ytVerifiedIcon" class="text-emerald-400">🛡️</span>
+                  <span id="ytVerifiedIcon" class="text-emerald-400 hidden">🛡️</span>
                 </h3>
                 <div class="flex items-center gap-2 mt-1">
-                  <span id="ytBadge" class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 glow-green">
-                    <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-                    <span>Connected ✓ (@eclipsarchon)</span>
+                  <span id="ytBadge" class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/20">
+                    <span class="w-2 h-2 rounded-full bg-red-400"></span>
+                    <span>Checking Status...</span>
                   </span>
                 </div>
               </div>
             </div>
             
-            <button id="ytBtn" onclick="connectPlatform('youtube')" class="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white border border-slate-700 transition-all flex items-center justify-center gap-2 shadow-sm">
-              <span>Reconnect YouTube</span>
-            </button>
+            <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
+              <button id="ytBtn" onclick="connectPlatform('youtube', 'login')" class="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white border border-slate-700 transition-all flex items-center justify-center gap-1.5 shadow-sm">
+                <span>Connect with Gmail</span>
+              </button>
+              <button onclick="connectPlatform('youtube', 'switch')" class="px-3 py-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition-all" title="Open Google Account Switcher / Sign into another Gmail">
+                🔄 Switch
+              </button>
+              <button id="ytDisconnectBtn" onclick="disconnectPlatform('youtube')" class="px-2.5 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition-all hidden" title="Disconnect YouTube Channel">
+                ✕
+              </button>
+            </div>
           </div>
 
           <!-- Instagram Card -->
-          <div id="igCard" class="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-emerald-500/30 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div id="igCard" class="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-slate-800 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div class="flex items-center gap-3.5">
               <!-- Official Instagram Gradient Icon -->
               <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white flex items-center justify-center shrink-0 shadow-md">
@@ -730,23 +875,54 @@ function renderDashboardHtml() {
               <div>
                 <h3 class="text-sm font-bold text-white flex items-center gap-1.5">
                   <span>Instagram Web (Reels)</span>
-                  <span id="igVerifiedIcon" class="text-emerald-400">🛡️</span>
+                  <span id="igVerifiedIcon" class="text-emerald-400 hidden">🛡️</span>
                 </h3>
                 <div class="flex items-center gap-2 mt-1">
-                  <span id="igBadge" class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 glow-green">
-                    <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-                    <span>Connected ✓</span>
+                  <span id="igBadge" class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/20">
+                    <span class="w-2 h-2 rounded-full bg-red-400"></span>
+                    <span>Checking Status...</span>
                   </span>
                 </div>
               </div>
             </div>
 
-            <button id="igBtn" onclick="connectPlatform('instagram')" class="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white border border-slate-700 transition-all flex items-center justify-center gap-2 shadow-sm">
-              <span>Reconnect Instagram</span>
-            </button>
+            <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
+              <button id="igBtn" onclick="connectPlatform('instagram', 'login')" class="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white border border-slate-700 transition-all flex items-center justify-center gap-1.5 shadow-sm">
+                <span>Connect Instagram</span>
+              </button>
+              <button onclick="connectPlatform('instagram', 'switch')" class="px-3 py-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition-all" title="Open Instagram Login to switch user">
+                🔄 Switch
+              </button>
+              <button id="igDisconnectBtn" onclick="disconnectPlatform('instagram')" class="px-2.5 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition-all hidden" title="Disconnect Instagram Account">
+                ✕
+              </button>
+            </div>
           </div>
 
         </div>
+
+        <!-- Custom Channel & Handle Configuration -->
+        <div class="mt-4 pt-4 border-t border-slate-800/80 bg-slate-950/40 rounded-xl p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+          <div class="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">YouTube Channel Handle</label>
+              <input id="inputYtHandle" type="text" placeholder="@YourChannelName" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500" />
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Instagram Username</label>
+              <input id="inputIgUser" type="text" placeholder="instagram_username" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500" />
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 shrink-0 self-end md:self-center">
+            <button onclick="saveAccountHandles()" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow transition-all flex items-center gap-1.5">
+              <span>💾 Save Channel Info</span>
+            </button>
+            <button onclick="resetBrowserProfile()" class="px-3 py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition-all" title="Wipe saved browser sessions completely clean">
+              🧹 Reset All Logins
+            </button>
+          </div>
+        </div>
+
       </div>
 
       <!-- Section 2: Frequency & Schedule Configuration -->
@@ -1170,50 +1346,78 @@ function renderDashboardHtml() {
     }
 
     function renderConnectionBadges(connections) {
+      if (!connections) return;
       const ytBadge = document.getElementById('ytBadge');
       const ytBtn = document.getElementById('ytBtn');
       const ytVerifiedIcon = document.getElementById('ytVerifiedIcon');
       const ytCard = document.getElementById('ytCard');
+      const ytDisconnectBtn = document.getElementById('ytDisconnectBtn');
+      const inputYtHandle = document.getElementById('inputYtHandle');
 
       const igBadge = document.getElementById('igBadge');
       const igBtn = document.getElementById('igBtn');
       const igVerifiedIcon = document.getElementById('igVerifiedIcon');
       const igCard = document.getElementById('igCard');
+      const igDisconnectBtn = document.getElementById('igDisconnectBtn');
+      const inputIgUser = document.getElementById('inputIgUser');
+
+      if (inputYtHandle && document.activeElement !== inputYtHandle && connections.youtubeChannel) {
+        inputYtHandle.value = connections.youtubeChannel;
+      }
+      if (inputIgUser && document.activeElement !== inputIgUser && connections.instagramUsername) {
+        inputIgUser.value = connections.instagramUsername;
+      }
 
       if (connections.youtube) {
+        const channelStr = connections.youtubeChannel ? '(' + connections.youtubeChannel + ')' : 'Connected ✓';
         ytBadge.className = "inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 glow-green";
-        ytBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400"></span> Connected ✓ (' + (connections.youtubeChannel || '@eclipsarchon') + ')';
-        ytBtn.innerText = 'Reconnect YouTube';
-        ytVerifiedIcon.classList.remove('hidden');
-        ytCard.classList.add('border-emerald-500/30');
-        ytCard.classList.remove('border-slate-800');
+        ytBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400"></span> Connected ✓ ' + channelStr;
+        ytBtn.innerHTML = '<span>Reconnect</span>';
+        if (ytVerifiedIcon) ytVerifiedIcon.classList.remove('hidden');
+        if (ytCard) {
+          ytCard.classList.add('border-emerald-500/30');
+          ytCard.classList.remove('border-slate-800');
+        }
+        if (ytDisconnectBtn) ytDisconnectBtn.classList.remove('hidden');
       } else {
         ytBadge.className = "inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/20";
         ytBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-red-400"></span> Not Connected';
-        ytBtn.innerText = 'Connect YouTube';
-        ytVerifiedIcon.classList.add('hidden');
-        ytCard.classList.remove('border-emerald-500/30');
-        ytCard.classList.add('border-slate-800');
+        ytBtn.innerHTML = '<span>Connect with Gmail</span>';
+        if (ytVerifiedIcon) ytVerifiedIcon.classList.add('hidden');
+        if (ytCard) {
+          ytCard.classList.remove('border-emerald-500/30');
+          ytCard.classList.add('border-slate-800');
+        }
+        if (ytDisconnectBtn) ytDisconnectBtn.classList.add('hidden');
       }
 
       if (connections.instagram) {
+        const igStr = connections.instagramUsername ? '(@' + connections.instagramUsername + ')' : 'Connected ✓';
         igBadge.className = "inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 glow-green";
-        igBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400"></span> Connected ✓ (@' + (connections.instagramUsername || 'eclipsarchon') + ')';
-        igBtn.innerText = 'Reconnect Instagram';
-        igVerifiedIcon.classList.remove('hidden');
-        igCard.classList.add('border-emerald-500/30');
+        igBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400"></span> Connected ✓ ' + igStr;
+        igBtn.innerHTML = '<span>Reconnect</span>';
+        if (igVerifiedIcon) igVerifiedIcon.classList.remove('hidden');
+        if (igCard) {
+          igCard.classList.add('border-emerald-500/30');
+          igCard.classList.remove('border-slate-800');
+        }
+        if (igDisconnectBtn) igDisconnectBtn.classList.remove('hidden');
       } else {
         igBadge.className = "inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/20";
         igBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-red-400"></span> Not Connected';
-        igBtn.innerText = 'Connect Instagram';
-        igVerifiedIcon.classList.add('hidden');
-        igCard.classList.remove('border-emerald-500/30');
+        igBtn.innerHTML = '<span>Connect Instagram</span>';
+        if (igVerifiedIcon) igVerifiedIcon.classList.add('hidden');
+        if (igCard) {
+          igCard.classList.remove('border-emerald-500/30');
+          igCard.classList.add('border-slate-800');
+        }
+        if (igDisconnectBtn) igDisconnectBtn.classList.add('hidden');
       }
     }
 
     async function reverifyConnections() {
       const spinner = document.getElementById('reverifySpinner');
-      spinner.classList.remove('hidden');
+      if (spinner) spinner.classList.remove('hidden');
       try {
         const res = await fetch('/api/verify-connections');
         const auth = await res.json();
@@ -1222,23 +1426,69 @@ function renderDashboardHtml() {
       } catch (e) {
         console.error('Verify error:', e);
       } finally {
-        spinner.classList.add('hidden');
+        if (spinner) spinner.classList.add('hidden');
       }
     }
 
-    async function connectPlatform(platform) {
+    async function connectPlatform(platform, mode = 'login') {
       try {
-        showToast('🚀 Opening official Chrome for <strong>' + platform.toUpperCase() + '</strong>... Please sign in!');
+        const actionLabel = mode === 'switch' ? 'Account Switcher' : 'Sign-in';
+        showToast('🚀 Opening official Chrome for <strong>' + platform.toUpperCase() + '</strong> (' + actionLabel + ')...');
         const res = await fetch('/api/connect-platform', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ platform, mode })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        showToast('⚡ <strong>Chrome opened!</strong> Log into your Gmail / Instagram account. When done, click "Refresh Status".');
+      } catch (err) {
+        showToast('Connect error: ' + err.message);
+      }
+    }
+
+    async function disconnectPlatform(platform) {
+      if (!confirm('Disconnect ' + platform.toUpperCase() + ' channel?')) return;
+      try {
+        const res = await fetch('/api/disconnect-platform', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ platform })
         });
         const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        showToast('⚡ <strong>Official Chrome opened!</strong> Complete sign-in in the Chrome window. When done, click "Refresh Status".');
+        if (data.auth) renderConnectionBadges(data.auth);
+        showToast('Disconnected ' + platform.toUpperCase() + '!');
       } catch (err) {
-        showToast('Connect error: ' + err.message);
+        showToast('Disconnect error: ' + err.message);
+      }
+    }
+
+    async function saveAccountHandles() {
+      const youtubeChannel = document.getElementById('inputYtHandle').value.trim();
+      const instagramUsername = document.getElementById('inputIgUser').value.trim();
+      try {
+        const res = await fetch('/api/update-account-info', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ youtubeChannel, instagramUsername })
+        });
+        const data = await res.json();
+        if (data.auth) renderConnectionBadges(data.auth);
+        showToast('✅ Channel details saved successfully!');
+      } catch (err) {
+        showToast('Save error: ' + err.message);
+      }
+    }
+
+    async function resetBrowserProfile() {
+      if (!confirm('This will completely reset and clear all saved logins/cookies in the Automation Studio browser so you can start completely fresh. Proceed?')) return;
+      try {
+        const res = await fetch('/api/reset-browser-profile', { method: 'POST' });
+        const data = await res.json();
+        if (data.auth) renderConnectionBadges(data.auth);
+        showToast('🧹 Browser profile and cookies completely wiped! You can now log into your accounts cleanly.');
+      } catch (err) {
+        showToast('Reset error: ' + err.message);
       }
     }
 

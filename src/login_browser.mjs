@@ -1,7 +1,7 @@
 /**
  * Commercial Interactive Login Window for YouTube Studio and Instagram
  * Supports automatic native Google Chrome / Edge detection, anti-detection flags,
- * and automatic session capture to state/auth_status.json.
+ * account switching, and automatic session capture to state/auth_status.json.
  */
 
 import { chromium } from 'playwright';
@@ -49,7 +49,8 @@ function findOfficialChromePath() {
   return null;
 }
 
-const targetPlatform = process.argv[2] || 'all';
+const targetPlatform = (process.argv[2] || 'all').toLowerCase();
+const mode = (process.argv[3] || 'login').toLowerCase(); // 'login' | 'switch' | 'mail'
 
 async function main() {
   cleanStaleLocks(BROWSER_PROFILE);
@@ -57,6 +58,7 @@ async function main() {
   console.log(`====================================================`);
   console.log(`[*] Automation Studio - Account Connection Studio`);
   console.log(`[*] Target Platform: ${targetPlatform.toUpperCase()}`);
+  console.log(`[*] Mode: ${mode.toUpperCase()}`);
   console.log(`[*] Profile Directory: ${BROWSER_PROFILE}`);
   console.log(`====================================================`);
 
@@ -64,12 +66,30 @@ async function main() {
   const urls = [];
 
   if (targetPlatform === 'youtube') {
-    urls.push('https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fstudio.youtube.com%2F');
+    if (mode === 'switch') {
+      urls.push('https://accounts.google.com/AccountChooser?service=youtube&continue=https%3A%2F%2Fstudio.youtube.com%2F');
+      urls.push('https://mail.google.com/');
+      urls.push('https://studio.youtube.com/');
+    } else {
+      urls.push('https://mail.google.com/');
+      urls.push('https://studio.youtube.com/');
+    }
   } else if (targetPlatform === 'instagram') {
-    urls.push('https://www.instagram.com/');
+    if (mode === 'switch') {
+      urls.push('https://www.instagram.com/accounts/login/?next=%2F');
+    } else {
+      urls.push('https://www.instagram.com/');
+    }
   } else {
-    urls.push('https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fstudio.youtube.com%2F');
-    urls.push('https://www.instagram.com/');
+    // Both platforms
+    if (mode === 'switch') {
+      urls.push('https://accounts.google.com/AccountChooser?service=youtube&continue=https%3A%2F%2Fstudio.youtube.com%2F');
+      urls.push('https://www.instagram.com/accounts/login/?next=%2F');
+    } else {
+      urls.push('https://mail.google.com/');
+      urls.push('https://studio.youtube.com/');
+      urls.push('https://www.instagram.com/');
+    }
   }
 
   // If official Chrome exists, launch it directly to guarantee Google login security compliance
@@ -125,14 +145,14 @@ async function launchPlaywrightFallback(urls) {
   const page = (await context.pages())[0] || await context.newPage();
   await page.goto(urls[0]);
 
-  if (urls.length > 1) {
-    const p2 = await context.newPage();
-    await p2.goto(urls[1]);
+  for (let i = 1; i < urls.length; i++) {
+    const p = await context.newPage();
+    await p.goto(urls[i]);
   }
 
   console.log(`\n====================================================`);
   console.log(`[ACTION REQUIRED FOR USER]`);
-  console.log(`1. Log into your YouTube Studio and Instagram accounts.`);
+  console.log(`1. Log into your Google/YouTube and Instagram accounts.`);
   console.log(`2. When done, simply CLOSE this browser window.`);
   console.log(`====================================================\n`);
 
@@ -144,12 +164,13 @@ async function launchPlaywrightFallback(urls) {
 }
 
 function verifyAndSaveSession() {
-  const cookiesPath = path.join(BROWSER_PROFILE, 'Default', 'Network', 'Cookies');
   let authData = {
-    youtube: true,
-    youtubeChannel: '@eclipsarchon',
-    instagram: true,
-    instagramUsername: 'eclipsarchon',
+    youtube: false,
+    youtubeChannel: '',
+    youtubeChannelId: '',
+    instagram: false,
+    instagramUsername: '',
+    accountEmail: '',
     lastVerified: new Date().toISOString(),
     status: 'connected'
   };
@@ -160,8 +181,20 @@ function verifyAndSaveSession() {
     }
   } catch (_) {}
 
+  // Check if profile exists
+  if (fs.existsSync(BROWSER_PROFILE)) {
+    if (targetPlatform === 'youtube') {
+      authData.youtube = true;
+    } else if (targetPlatform === 'instagram') {
+      authData.instagram = true;
+    } else {
+      authData.youtube = true;
+      authData.instagram = true;
+    }
+  }
+
   authData.lastVerified = new Date().toISOString();
-  authData.status = 'connected';
+  authData.status = (authData.youtube || authData.instagram) ? 'connected' : 'disconnected';
 
   if (!fs.existsSync(path.dirname(AUTH_STATUS_FILE))) {
     fs.mkdirSync(path.dirname(AUTH_STATUS_FILE), { recursive: true });

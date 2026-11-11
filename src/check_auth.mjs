@@ -17,22 +17,24 @@ export async function checkAllAuth() {
     if (fs.existsSync(AUTH_STATUS_FILE)) {
       const data = JSON.parse(fs.readFileSync(AUTH_STATUS_FILE, 'utf-8'));
       return {
-        youtube: !!data.youtube,
-        youtubeChannel: data.youtubeChannel || '@eclipsarchon',
-        instagram: !!data.instagram,
-        instagramUsername: data.instagramUsername || 'eclipsarchon',
-        accountEmail: data.accountEmail || 'lokesh30.07.2009@gmail.com',
+        youtube: Boolean(data.youtube),
+        youtubeChannel: data.youtubeChannel || '',
+        youtubeChannelId: data.youtubeChannelId || '',
+        instagram: Boolean(data.instagram),
+        instagramUsername: data.instagramUsername || '',
+        accountEmail: data.accountEmail || '',
         lastChecked: new Date().toISOString()
       };
     }
   } catch (_) {}
 
   return {
-    youtube: true,
-    youtubeChannel: '@eclipsarchon',
-    instagram: true,
-    instagramUsername: 'eclipsarchon',
-    accountEmail: 'lokesh30.07.2009@gmail.com',
+    youtube: false,
+    youtubeChannel: '',
+    youtubeChannelId: '',
+    instagram: false,
+    instagramUsername: '',
+    accountEmail: '',
     lastChecked: new Date().toISOString()
   };
 }
