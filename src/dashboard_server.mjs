@@ -77,31 +77,15 @@ function getStagedVideos() {
 }
 
 function syncWindowsTaskScheduler(postTimes) {
-  const vbsPath = path.join(ROOT_DIR, 'run_daily_silent.vbs');
-  const results = [];
-
-  for (let i = 1; i <= 10; i++) {
-    try {
-      execSync(`schtasks /delete /tn "Automation_Slot${i}" /f`, { stdio: 'ignore' });
-      execSync(`schtasks /delete /tn "AnimeReels_Slot${i}" /f`, { stdio: 'ignore' });
-    } catch (_) {}
+  const scriptPath = path.join(ROOT_DIR, 'src', 'sync_schedule.ps1');
+  const timesArg = postTimes.map(t => `"${t.trim()}"`).join(',');
+  try {
+    execSync(`powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}" -PostTimes ${timesArg}`, { stdio: 'pipe' });
+    return postTimes.map((t, idx) => ({ slot: idx + 1, time: t, status: 'ok' }));
+  } catch (err) {
+    console.error('[Schedule Sync Error]', err.message);
+    return [];
   }
-
-  for (let i = 0; i < postTimes.length; i++) {
-    const slot = i + 1;
-    const time = postTimes[i].trim();
-    if (!time) continue;
-    const taskName = `Automation_Slot${slot}`;
-    const cmd = `schtasks /create /tn "${taskName}" /tr "wscript.exe \\"${vbsPath}\\"" /sc daily /st ${time} /f`;
-    try {
-      execSync(cmd, { stdio: 'pipe' });
-      results.push({ slot, time, status: 'ok' });
-    } catch (err) {
-      results.push({ slot, time, status: 'error', error: err.message });
-    }
-  }
-
-  return results;
 }
 
 function getStatusData() {
