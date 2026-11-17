@@ -51,6 +51,7 @@ function findOfficialChromePath() {
 
 const targetPlatform = (process.argv[2] || 'all').toLowerCase();
 const mode = (process.argv[3] || 'login').toLowerCase(); // 'login' | 'switch' | 'mail'
+const targetEmail = process.argv[4] ? process.argv[4].trim() : '';
 
 async function main() {
   cleanStaleLocks(BROWSER_PROFILE);
@@ -59,21 +60,26 @@ async function main() {
   console.log(`[*] Automation Studio - Account Connection Studio`);
   console.log(`[*] Target Platform: ${targetPlatform.toUpperCase()}`);
   console.log(`[*] Mode: ${mode.toUpperCase()}`);
+  if (targetEmail) console.log(`[*] Target Email: ${targetEmail}`);
   console.log(`[*] Profile Directory: ${BROWSER_PROFILE}`);
   console.log(`====================================================`);
 
   const chromePath = findOfficialChromePath();
   const urls = [];
 
-  if (targetPlatform === 'youtube') {
-    if (mode === 'switch') {
-      urls.push('https://accounts.google.com/AccountChooser?service=youtube&continue=https%3A%2F%2Fstudio.youtube.com%2F');
-      urls.push('https://mail.google.com/');
-      urls.push('https://studio.youtube.com/');
-    } else {
-      urls.push('https://mail.google.com/');
-      urls.push('https://studio.youtube.com/');
+  let ytUrl = 'https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fstudio.youtube.com%2F';
+  if (targetEmail) {
+    ytUrl += `&login_hint=${encodeURIComponent(targetEmail)}`;
+  }
+  if (mode === 'switch') {
+    ytUrl = 'https://accounts.google.com/AccountChooser?service=youtube&continue=https%3A%2F%2Fstudio.youtube.com%2F';
+    if (targetEmail) {
+      ytUrl += `&Email=${encodeURIComponent(targetEmail)}`;
     }
+  }
+
+  if (targetPlatform === 'youtube') {
+    urls.push(ytUrl);
   } else if (targetPlatform === 'instagram') {
     if (mode === 'switch') {
       urls.push('https://www.instagram.com/accounts/login/?next=%2F');
@@ -82,14 +88,8 @@ async function main() {
     }
   } else {
     // Both platforms
-    if (mode === 'switch') {
-      urls.push('https://accounts.google.com/AccountChooser?service=youtube&continue=https%3A%2F%2Fstudio.youtube.com%2F');
-      urls.push('https://www.instagram.com/accounts/login/?next=%2F');
-    } else {
-      urls.push('https://mail.google.com/');
-      urls.push('https://studio.youtube.com/');
-      urls.push('https://www.instagram.com/');
-    }
+    urls.push(ytUrl);
+    urls.push('https://www.instagram.com/');
   }
 
   // If official Chrome exists, launch it directly to guarantee Google login security compliance
@@ -101,6 +101,8 @@ async function main() {
       `--user-data-dir=${BROWSER_PROFILE}`,
       '--no-first-run',
       '--no-default-browser-check',
+      '--disable-search-engine-choice-screen',
+      '--disable-features=Translate,OptimizationHints',
       '--start-maximized',
       ...urls
     ], {

@@ -96,6 +96,28 @@ function syncWindowsTaskScheduler(postTimes) {
   }
 }
 
+function getDetectedGoogleAccounts() {
+  try {
+    const localStatePath = path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'User Data', 'Local State');
+    if (!fs.existsSync(localStatePath)) return [];
+    const data = JSON.parse(fs.readFileSync(localStatePath, 'utf-8'));
+    const infoCache = data.profile?.info_cache || {};
+    const accounts = [];
+    for (const [profKey, profData] of Object.entries(infoCache)) {
+      if (profData.user_name) {
+        accounts.push({
+          profileKey: profKey,
+          name: profData.name || profData.gaia_name || profKey,
+          email: profData.user_name
+        });
+      }
+    }
+    return accounts;
+  } catch (_) {
+    return [];
+  }
+}
+
 function getStatusData() {
   const config = loadConfig();
   const history = loadHistory();
@@ -169,6 +191,7 @@ function getStatusData() {
     isJobRunning,
     lastJobOutput: lastJobOutput.slice(-2500),
     nextUp,
+    detectedAccounts: getDetectedGoogleAccounts(),
     pendingList: pendingVideos.slice(0, 15).map(p => path.basename(p)),
     history: history.uploadedFiles.slice().reverse()
   };
@@ -234,10 +257,11 @@ const server = http.createServer(async (req, res) => {
       const data = await readJson();
       const platform = data.platform || 'all';
       const mode = data.mode || 'login';
+      const email = data.email || '';
 
-      console.log(`[*] Opening login browser for platform: ${platform} (mode: ${mode})`);
+      console.log(`[*] Opening login browser for platform: ${platform} (mode: ${mode}, email: ${email})`);
       isLoginActive = true;
-      const child = spawn('node', ['src/login_browser.mjs', platform, mode], {
+      const child = spawn('node', ['src/login_browser.mjs', platform, mode, email], {
         cwd: ROOT_DIR,
         detached: true,
         stdio: 'ignore'
@@ -825,6 +849,28 @@ function renderDashboardHtml() {
           </div>
         </div>
 
+        <!-- Google Account 1-Click Auto-Detect Selector -->
+        <div class="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div class="flex items-center gap-2.5">
+            <span class="text-xl">📧</span>
+            <div>
+              <div class="text-xs font-bold text-white flex items-center gap-2">
+                <span>Select Your Google / Gmail Account</span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] bg-purple-500/10 text-purple-400 border border-purple-500/20 font-semibold">Auto-Detected on PC</span>
+              </div>
+              <div class="text-[11px] text-slate-400">Pre-fills your exact Google email so Chrome opens directly ready to sign in (1-time permanent authorization)</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 w-full sm:w-auto">
+            <select id="selectDetectedAccount" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500 min-w-[240px]">
+              <option value="">Select Google Account...</option>
+            </select>
+            <button onclick="connectSelectedAccount()" class="px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-xs shadow transition-all flex items-center gap-1.5 shrink-0">
+              <span>Connect Account</span>
+            </button>
+          </div>
+        </div>
+
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           
           <!-- YouTube Studio Card -->
@@ -1317,6 +1363,17 @@ function renderDashboardHtml() {
         // Connection Badges & Verified Shield Icons
         renderConnectionBadges(data.connections);
 
+        // Auto-populate detected Google accounts from PC
+        if (Array.isArray(data.detectedAccounts) && data.detectedAccounts.length > 0) {
+          const select = document.getElementById('selectDetectedAccount');
+          if (select && select.dataset.loaded !== 'true') {
+            select.dataset.loaded = 'true';
+            select.innerHTML = '<option value="">Select Google Account...</option>' + data.detectedAccounts.map(acc => {
+              return '<option value="' + acc.email + '">' + acc.name + ' (' + acc.email + ')</option>';
+            }).join('');
+          }
+        }
+
         // Update provider label in chat
         if (data.apiProvider) {
           document.getElementById('currentProviderLabel').innerText = data.apiProvider.toUpperCase();
@@ -1430,18 +1487,28 @@ function renderDashboardHtml() {
       }
     }
 
-    async function connectPlatform(platform, mode = 'login') {
+    async function connectSelectedAccount() {
+      const select = document.getElementById('selectDetectedAccount');
+      const email = select ? select.value : '';
+      if (!email) {
+        showToast('Please pick a Google account from the dropdown first!');
+        return;
+      }
+      await connectPlatform('youtube', 'login', email);
+    }
+
+    async function connectPlatform(platform, mode = 'login', email = '') {
       try {
-        const actionLabel = mode === 'switch' ? 'Account Switcher' : 'Sign-in';
+        const actionLabel = mode === 'switch' ? 'Account Switcher' : (email ? 'Pre-filled for ' + email : 'Sign-in');
         showToast('🚀 Opening official Chrome for <strong>' + platform.toUpperCase() + '</strong> (' + actionLabel + ')...');
         const res = await fetch('/api/connect-platform', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ platform, mode })
+          body: JSON.stringify({ platform, mode, email })
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
-        showToast('⚡ <strong>Chrome opened!</strong> Log into your Gmail / Instagram account. When done, click "Refresh Status".');
+        showToast('⚡ <strong>Chrome opened!</strong> Log into your account in the Chrome window. When done, click "Refresh Status".');
       } catch (err) {
         showToast('Connect error: ' + err.message);
       }
