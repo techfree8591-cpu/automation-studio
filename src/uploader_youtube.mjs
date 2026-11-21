@@ -3,6 +3,14 @@
  * Automates uploading vertical videos as YouTube Shorts via studio.youtube.com
  */
 
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const ROOT_DIR = path.resolve(__dirname, '..');
+const LOGS_DIR = path.join(ROOT_DIR, 'logs');
+
 export async function uploadToYouTube(context, videoPath, metadata) {
   console.log('\n[YouTube] Starting upload for:', videoPath);
   const page = await context.newPage();
@@ -15,6 +23,14 @@ export async function uploadToYouTube(context, videoPath, metadata) {
     // Check if redirected to login
     if (page.url().includes('accounts.google.com')) {
       throw new Error('Not logged in to YouTube Studio! Please connect your Google account in Dashboard first.');
+    }
+
+    // Dismiss "Improve your experience / Unsupported browser" notice if shown
+    const skipBtn = await page.$('a:has-text("SKIP TO YOUTUBE STUDIO")');
+    if (skipBtn) {
+      console.log('[YouTube] Bypassing browser version prompt (SKIP TO YOUTUBE STUDIO)...');
+      await skipBtn.click().catch(() => {});
+      await page.waitForTimeout(3000);
     }
 
     // Dismiss any popups/dialogs if present
@@ -69,13 +85,13 @@ export async function uploadToYouTube(context, videoPath, metadata) {
     await fileInput.setInputFiles(videoPath);
     console.log('[YouTube] File selected, waiting for upload dialog...');
 
-    // Wait for the upload modal to appear
-    await page.waitForSelector('ytcp-uploads-dialog, #dialog', { timeout: 30000 });
-    await page.waitForTimeout(4000);
+    // Wait for the upload modal and title textbox to appear
+    console.log('[YouTube] Waiting for upload metadata editor...');
+    const titleBox = await page.waitForSelector('#title-textarea #textbox, #textbox[aria-label*="title" i], [aria-label*="Add a title" i]', { timeout: 35000 });
+    await page.waitForTimeout(2000);
 
     // 1. Fill Title
     console.log('[YouTube] Setting title:', metadata.youtube.title);
-    const titleBox = await page.waitForSelector('#title-textarea #textbox, #textbox[aria-label*="title" i], [contenteditable="true"]', { timeout: 15000 });
     await titleBox.click();
     await page.keyboard.press('Control+A');
     await page.keyboard.press('Backspace');
@@ -97,10 +113,14 @@ export async function uploadToYouTube(context, videoPath, metadata) {
     console.log('[YouTube] Selecting audience (Not made for kids)...');
     const notForKidsRadio = await page.waitForSelector('tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"], [name="VIDEO_MADE_FOR_KIDS_NOT_MFK"]', { timeout: 10000 }).catch(() => null);
     if (notForKidsRadio) {
+      await notForKidsRadio.scrollIntoViewIfNeeded().catch(() => {});
       await notForKidsRadio.click();
     } else {
       const textRadio = await page.$('text="No, it\'s not made for kids"');
-      if (textRadio) await textRadio.click();
+      if (textRadio) {
+        await textRadio.scrollIntoViewIfNeeded().catch(() => {});
+        await textRadio.click();
+      }
     }
     await page.waitForTimeout(1000);
 
@@ -109,17 +129,21 @@ export async function uploadToYouTube(context, videoPath, metadata) {
     for (let step = 1; step <= 3; step++) {
       const nextBtn = await page.waitForSelector('#next-button, ytcp-button#next-button', { timeout: 10000 });
       await nextBtn.click();
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(2500);
     }
 
     // 5. Select Public Visibility
     console.log('[YouTube] Setting visibility to Public...');
     const publicRadio = await page.waitForSelector('tp-yt-paper-radio-button[name="PUBLIC"], [name="PUBLIC"], #radio-public', { timeout: 10000 }).catch(() => null);
     if (publicRadio) {
+      await publicRadio.scrollIntoViewIfNeeded().catch(() => {});
       await publicRadio.click();
     } else {
       const textPublic = await page.$('text="Public"');
-      if (textPublic) await textPublic.click();
+      if (textPublic) {
+        await textPublic.scrollIntoViewIfNeeded().catch(() => {});
+        await textPublic.click();
+      }
     }
     await page.waitForTimeout(2000);
 
@@ -132,6 +156,13 @@ export async function uploadToYouTube(context, videoPath, metadata) {
     console.log('[YouTube] Waiting for publish confirmation...');
     await page.waitForTimeout(6000);
 
+    let publishedUrl = '';
+    const videoLink = await page.$('a.ytcp-video-info, a[href*="youtu.be"], a[href*="/shorts/"]');
+    if (videoLink) {
+      publishedUrl = await videoLink.getAttribute('href').catch(() => '');
+      if (publishedUrl) console.log('[YouTube] Short URL:', publishedUrl);
+    }
+
     const closeBtn = await page.$('#close-button, ytcp-button#close-button');
     if (closeBtn) {
       await closeBtn.click().catch(() => {});
@@ -139,11 +170,11 @@ export async function uploadToYouTube(context, videoPath, metadata) {
 
     console.log('[YouTube] Successfully published YouTube Short!');
     await page.close();
-    return { success: true };
+    return { success: true, url: publishedUrl || undefined };
 
   } catch (err) {
     console.error('[YouTube] Upload failed:', err.message);
-    await page.screenshot({ path: `logs/youtube_error_${Date.now()}.png` }).catch(() => {});
+    await page.screenshot({ path: path.join(LOGS_DIR, `youtube_error_${Date.now()}.png`) }).catch(() => {});
     await page.close();
     return { success: false, error: err.message };
   }

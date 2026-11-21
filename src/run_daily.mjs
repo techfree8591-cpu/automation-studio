@@ -135,6 +135,7 @@ async function run() {
   const launchOpts = {
     headless: isCloudOrHeadless,
     viewport: { width: 1280, height: 800 },
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
     args: [
       '--disable-blink-features=AutomationControlled',
       '--start-maximized',
@@ -220,6 +221,7 @@ async function run() {
     history.uploadedFiles.push({
       filename,
       title: metadata.youtube.title,
+      youtubeUrl: results.youtube?.url || '',
       timestamp: new Date().toISOString(),
       results
     });

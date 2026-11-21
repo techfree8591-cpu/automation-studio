@@ -3,6 +3,14 @@
  * Automates uploading vertical videos as Reels via instagram.com
  */
 
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const ROOT_DIR = path.resolve(__dirname, '..');
+const LOGS_DIR = path.join(ROOT_DIR, 'logs');
+
 export async function uploadToInstagram(context, videoPath, metadata) {
   console.log('\n[Instagram] Starting upload for:', videoPath);
   const page = await context.newPage();
@@ -10,13 +18,13 @@ export async function uploadToInstagram(context, videoPath, metadata) {
   try {
     console.log('[Instagram] Navigating to Instagram...');
     await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(4000);
 
-    // Check login state: check if login form or username/password inputs are shown
-    const loginForm = await page.$('input[name="username"], input[name="password"], form#loginForm, a[href*="/accounts/login"]');
-    if (loginForm || page.url().includes('/accounts/login/')) {
-      console.warn('[Instagram] Not logged in to Instagram! Login form detected.');
-      await page.screenshot({ path: `logs/instagram_not_logged_in_${Date.now()}.png` }).catch(() => {});
+    // Check login state: check if login form or username/password inputs or signup elements are shown
+    const isLoginPage = await page.$('input[name="username"], input[name="password"], form#loginForm, a[href*="/accounts/emailsignup"], button:has-text("Log in"), button:has-text("Log In"), div:has-text("Create new account")');
+    if (isLoginPage || page.url().includes('/accounts/login/')) {
+      console.warn('[Instagram] Not logged in to Instagram! Login page detected.');
+      await page.screenshot({ path: path.join(LOGS_DIR, `instagram_not_logged_in_${Date.now()}.png`) }).catch(() => {});
       await page.close();
       return { success: false, error: 'Not logged in to Instagram! Please click "Connect Instagram" on dashboard to log in once.' };
     }
@@ -29,18 +37,24 @@ export async function uploadToInstagram(context, videoPath, metadata) {
     }
 
     console.log('[Instagram] Opening Create modal...');
-    // Look for Create in left sidebar (SVG with aria-label="New post", or "Create", or link with "Create")
+    // Look for Create in left sidebar navigation (avoid matching login/signup buttons)
     const createBtn = await page.waitForSelector(
-      'svg[aria-label="New post"], svg[aria-label="Create"], a[href="#"]:has-text("Create"), span:has-text("Create"), a:has(svg[aria-label="New post"])',
+      'svg[aria-label="New post"], svg[aria-label="Create"], div[role="button"]:has(svg[aria-label="New post"]), a[href="#"]:has(svg[aria-label="New post"]), nav a:has-text("Create"), div[role="navigation"] :has-text("Create")',
       { timeout: 15000 }
     ).catch(() => null);
 
-    if (createBtn) {
-      await createBtn.click();
-      await page.waitForTimeout(1500);
-      const postSubmenu = await page.$('span:has-text("Post"), div[role="button"]:has-text("Post"), a:has-text("Post")');
-      if (postSubmenu) await postSubmenu.click().catch(() => {});
+    if (!createBtn) {
+      console.warn('[Instagram] Navigation create button not found. Taking screenshot...');
+      await page.screenshot({ path: path.join(LOGS_DIR, `instagram_nav_not_found_${Date.now()}.png`) }).catch(() => {});
+      await page.close();
+      return { success: false, error: 'Instagram navigation bar not ready or account not authenticated.' };
     }
+
+    await createBtn.click();
+    await page.waitForTimeout(1500);
+
+    const postSubmenu = await page.$('span:has-text("Post"), div[role="button"]:has-text("Post"), a:has-text("Post")');
+    if (postSubmenu) await postSubmenu.click().catch(() => {});
 
     await page.waitForTimeout(2000);
 
@@ -104,7 +118,7 @@ export async function uploadToInstagram(context, videoPath, metadata) {
 
   } catch (err) {
     console.error('[Instagram] Upload failed:', err.message);
-    await page.screenshot({ path: `logs/instagram_error_${Date.now()}.png` }).catch(() => {});
+    await page.screenshot({ path: path.join(LOGS_DIR, `instagram_error_${Date.now()}.png`) }).catch(() => {});
     await page.close();
     return { success: false, error: err.message };
   }
