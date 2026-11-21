@@ -9,38 +9,63 @@ export async function uploadToYouTube(context, videoPath, metadata) {
 
   try {
     console.log('[YouTube] Navigating to YouTube Studio...');
-    await page.goto('https://studio.youtube.com/', { waitUntil: 'networkidle', timeout: 60000 });
+    await page.goto('https://studio.youtube.com/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForTimeout(3000);
 
     // Check if redirected to login
     if (page.url().includes('accounts.google.com')) {
-      throw new Error('Not logged in to YouTube Studio! Please run "npm run login" first.');
+      throw new Error('Not logged in to YouTube Studio! Please connect your Google account in Dashboard first.');
     }
 
     // Dismiss any popups/dialogs if present
-    const dismissBtn = await page.$('ytcp-button#dismiss-button, tp-yt-paper-button#dismiss-button');
+    const dismissBtn = await page.$('ytcp-button#dismiss-button, tp-yt-paper-button#dismiss-button, button:has-text("Dismiss")');
     if (dismissBtn) {
       await dismissBtn.click().catch(() => {});
       await page.waitForTimeout(1000);
     }
 
     console.log('[YouTube] Opening Upload dialog...');
-    // Look for Create button or Upload button
-    const createBtn = await page.waitForSelector('ytcp-button#create-icon, button#create-icon, ytcp-icon-button#upload-icon, #upload-icon', { timeout: 15000 }).catch(() => null);
-    
-    if (createBtn) {
-      await createBtn.click();
-      await page.waitForTimeout(1000);
-      
-      const uploadMenuItem = await page.$('tp-yt-paper-item#text-item-0, ytcp-text-menu #text-item-0, text="Upload videos"');
-      if (uploadMenuItem) {
-        await uploadMenuItem.click();
-        await page.waitForTimeout(1000);
+    let fileInput = await page.$('input[type="file"]');
+
+    if (!fileInput) {
+      // Strategy 1: Direct upload icon in top right (#upload-button, [aria-label*="Upload" i])
+      const directUpload = await page.$('#upload-button, ytcp-icon-button[aria-label*="Upload" i], button[aria-label*="Upload" i], #upload-icon');
+      if (directUpload) {
+        console.log('[YouTube] Clicking direct upload icon...');
+        await directUpload.click().catch(() => {});
+        await page.waitForTimeout(2000);
+      }
+
+      // Strategy 2: "+ Create" button
+      fileInput = await page.$('input[type="file"]');
+      if (!fileInput) {
+        const createBtn = await page.waitForSelector(
+          'button:has-text("Create"), ytcp-button:has-text("Create"), #create-icon, ytcp-button#create-icon, button#create-icon',
+          { timeout: 10000 }
+        ).catch(() => null);
+
+        if (createBtn) {
+          console.log('[YouTube] Clicking Create button...');
+          await createBtn.click().catch(() => {});
+          await page.waitForTimeout(1500);
+
+          const uploadMenuItem = await page.waitForSelector(
+            'tp-yt-paper-item:has-text("Upload videos"), ytcp-text-menu :has-text("Upload videos"), [aria-label*="Upload videos" i], text="Upload videos"',
+            { timeout: 8000 }
+          ).catch(() => null);
+
+          if (uploadMenuItem) {
+            console.log('[YouTube] Clicking Upload videos in dropdown...');
+            await uploadMenuItem.click().catch(() => {});
+            await page.waitForTimeout(2000);
+          }
+        }
       }
     }
 
     // Wait for file input and supply video file
     console.log('[YouTube] Selecting video file...');
-    const fileInput = await page.waitForSelector('input[type="file"]', { state: 'attached', timeout: 20000 });
+    fileInput = await page.waitForSelector('input[type="file"]', { state: 'attached', timeout: 30000 });
     await fileInput.setInputFiles(videoPath);
     console.log('[YouTube] File selected, waiting for upload dialog...');
 
@@ -58,12 +83,14 @@ export async function uploadToYouTube(context, videoPath, metadata) {
     await page.waitForTimeout(1000);
 
     // 2. Fill Description
-    console.log('[YouTube] Setting description...');
-    const descBox = await page.$('#description-textarea #textbox, #textbox[aria-label*="description" i]');
-    if (descBox) {
-      await descBox.click();
-      await descBox.fill(metadata.youtube.description);
-      await page.waitForTimeout(1000);
+    if (metadata.youtube.description) {
+      console.log('[YouTube] Setting description...');
+      const descBox = await page.$('#description-textarea #textbox, #textbox[aria-label*="description" i]');
+      if (descBox) {
+        await descBox.click();
+        await descBox.fill(metadata.youtube.description);
+        await page.waitForTimeout(1000);
+      }
     }
 
     // 3. Set "Not made for kids"
@@ -72,7 +99,6 @@ export async function uploadToYouTube(context, videoPath, metadata) {
     if (notForKidsRadio) {
       await notForKidsRadio.click();
     } else {
-      // Fallback click by text
       const textRadio = await page.$('text="No, it\'s not made for kids"');
       if (textRadio) await textRadio.click();
     }

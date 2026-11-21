@@ -1679,9 +1679,12 @@ function renderDashboardHtml() {
       }
     }
 
+    let currentRenderedFilename = null;
+
     function renderNextUp(nextUp) {
       const container = document.getElementById('nextUpContent');
       if (!nextUp) {
+        currentRenderedFilename = null;
         container.innerHTML = \`
           <div class="p-6 rounded-xl bg-slate-900/60 border border-slate-800 text-center space-y-2">
             <p class="text-sm font-semibold text-slate-300">No unposted videos in queue!</p>
@@ -1690,6 +1693,19 @@ function renderDashboardHtml() {
         \`;
         return;
       }
+
+      // If user is actively typing in the title or caption, do NOT overwrite the DOM!
+      const activeEl = document.activeElement;
+      if (activeEl && (activeEl.id === 'editIgCaption' || activeEl.id === 'editYtTitle')) {
+        return;
+      }
+
+      // If already rendered for this filename and inputs exist, keep user view steady
+      if (currentRenderedFilename === nextUp.filename && document.getElementById('editIgCaption')) {
+        return;
+      }
+
+      currentRenderedFilename = nextUp.filename;
 
       const meta = nextUp.metadata || {};
       const ytTitle = (meta.youtube?.title || '').replace(/"/g, '&quot;');
@@ -1837,6 +1853,7 @@ function renderDashboardHtml() {
         if (data.error) throw new Error(data.error);
 
         showToast('✅ Custom edits saved for <strong>' + filename + '</strong>!');
+        currentRenderedFilename = null;
         fetchStatus();
       } catch (err) {
         showToast('❌ Save error: ' + err.message);
@@ -1852,6 +1869,7 @@ function renderDashboardHtml() {
           body: JSON.stringify({ filename })
         });
         showToast('🔄 Reset to AI defaults for ' + filename);
+        currentRenderedFilename = null;
         fetchStatus();
       } catch (err) {
         showToast('❌ Reset error: ' + err.message);

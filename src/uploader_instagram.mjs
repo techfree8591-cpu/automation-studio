@@ -9,14 +9,19 @@ export async function uploadToInstagram(context, videoPath, metadata) {
 
   try {
     console.log('[Instagram] Navigating to Instagram...');
-    await page.goto('https://www.instagram.com/', { waitUntil: 'networkidle', timeout: 60000 });
+    await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForTimeout(3000);
 
-    // Check login state
-    if (page.url().includes('/accounts/login/')) {
-      throw new Error('Not logged in to Instagram! Please run "npm run login" first.');
+    // Check login state: check if login form or username/password inputs are shown
+    const loginForm = await page.$('input[name="username"], input[name="password"], form#loginForm, a[href*="/accounts/login"]');
+    if (loginForm || page.url().includes('/accounts/login/')) {
+      console.warn('[Instagram] Not logged in to Instagram! Login form detected.');
+      await page.screenshot({ path: `logs/instagram_not_logged_in_${Date.now()}.png` }).catch(() => {});
+      await page.close();
+      return { success: false, error: 'Not logged in to Instagram! Please click "Connect Instagram" on dashboard to log in once.' };
     }
 
-    // Dismiss notifications prompt if shown
+    // Dismiss notifications / cookie prompt if shown ("Turn on Notifications" -> "Not Now")
     const notNowBtn = await page.$('button:has-text("Not Now"), button:has-text("Cancel")');
     if (notNowBtn) {
       await notNowBtn.click().catch(() => {});
@@ -24,9 +29,9 @@ export async function uploadToInstagram(context, videoPath, metadata) {
     }
 
     console.log('[Instagram] Opening Create modal...');
-    // Find Create button in navigation
+    // Look for Create in left sidebar (SVG with aria-label="New post", or "Create", or link with "Create")
     const createBtn = await page.waitForSelector(
-      'svg[aria-label="New post"], svg[aria-label="Create"], a[href="#"]:has-text("Create"), span:has-text("Create")',
+      'svg[aria-label="New post"], svg[aria-label="Create"], a[href="#"]:has-text("Create"), span:has-text("Create"), a:has(svg[aria-label="New post"])',
       { timeout: 15000 }
     ).catch(() => null);
 
@@ -35,15 +40,13 @@ export async function uploadToInstagram(context, videoPath, metadata) {
       await page.waitForTimeout(1500);
       const postSubmenu = await page.$('span:has-text("Post"), div[role="button"]:has-text("Post"), a:has-text("Post")');
       if (postSubmenu) await postSubmenu.click().catch(() => {});
-    } else {
-      await page.click('a[role="link"]:has(svg[aria-label="New post"])').catch(() => {});
     }
 
     await page.waitForTimeout(2000);
 
-    // Provide file to the file input (attached to DOM, often hidden via CSS)
+    // Provide file to file input
     console.log('[Instagram] Selecting video file...');
-    const fileInput = await page.waitForSelector('input[type="file"]', { state: 'attached', timeout: 20000 });
+    const fileInput = await page.waitForSelector('input[type="file"]', { state: 'attached', timeout: 25000 });
     await fileInput.setInputFiles(videoPath);
     await page.waitForTimeout(4000);
 
@@ -55,43 +58,41 @@ export async function uploadToInstagram(context, videoPath, metadata) {
     }
 
     // Adjust crop to 9:16 if option is available
-    const cropBtn = await page.$('button[aria-label="Select crop"], svg[aria-label="Select crop"]');
+    const cropBtn = await page.$('button[aria-label="Select crop"], svg[aria-label="Select crop"], [aria-label*="crop" i]');
     if (cropBtn) {
       await cropBtn.click().catch(() => {});
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(800);
       const ratio916 = await page.$('button:has-text("9:16"), span:has-text("9:16"), div[role="button"]:has-text("9:16")');
       if (ratio916) {
         await ratio916.click().catch(() => {});
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(800);
       }
     }
 
     // Click "Next" (Crop step -> Filter/Cover step)
     console.log('[Instagram] Moving to next step...');
-    const nextBtn1 = await page.waitForSelector('div[role="button"]:has-text("Next"), button:has-text("Next")', { timeout: 10000 });
+    const nextBtn1 = await page.waitForSelector('div[role="button"]:has-text("Next"), button:has-text("Next"), span:has-text("Next")', { timeout: 15000 });
     await nextBtn1.click();
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(3000);
 
     // Click "Next" (Cover step -> Caption step)
-    const nextBtn2 = await page.waitForSelector('div[role="button"]:has-text("Next"), button:has-text("Next")', { timeout: 10000 });
+    const nextBtn2 = await page.waitForSelector('div[role="button"]:has-text("Next"), button:has-text("Next"), span:has-text("Next")', { timeout: 15000 });
     await nextBtn2.click();
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(3000);
 
     // Fill Caption
     console.log('[Instagram] Writing caption...');
-    const captionBox = await page.waitForSelector('div[aria-label*="caption" i], div[contenteditable="true"]', { timeout: 10000 });
+    const captionBox = await page.waitForSelector('div[aria-label*="caption" i], div[contenteditable="true"], div[role="textbox"]', { timeout: 15000 });
     await captionBox.click();
-    
-    // Type or paste caption
     await page.keyboard.insertText(metadata.instagram.caption);
     await page.waitForTimeout(2000);
 
     // Click "Share"
     console.log('[Instagram] Clicking Share...');
-    const shareBtn = await page.waitForSelector('div[role="button"]:has-text("Share"), button:has-text("Share")', { timeout: 10000 });
+    const shareBtn = await page.waitForSelector('div[role="button"]:has-text("Share"), button:has-text("Share"), span:has-text("Share")', { timeout: 15000 });
     await shareBtn.click();
 
-    // Wait for "Your reel has been shared" dialog or completion
+    // Wait for "Your reel has been shared" or modal to close
     console.log('[Instagram] Waiting for reel to finish uploading...');
     await page.waitForSelector('text="Your reel has been shared", text="Your post has been shared"', { timeout: 90000 }).catch(() => {
       console.log('[Instagram] Share confirmation dialog closed or timed out, verifying state...');

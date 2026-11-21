@@ -113,7 +113,7 @@ async function run() {
   if (process.platform === 'win32') {
     try {
       const { execSync } = await import('child_process');
-      execSync('powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like \\"*automation\\\\browser_profile*\\" -and $_.ProcessId -ne $PID } | Stop-Process -Force -ErrorAction SilentlyContinue"', { stdio: 'ignore' });
+      execSync('powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object CommandLine -like \'*automation*browser_profile*\' | Stop-Process -Force -ErrorAction SilentlyContinue"', { stdio: 'ignore' });
     } catch (_) {}
   }
 
@@ -177,7 +177,11 @@ async function run() {
       log('[*] Initiating YouTube Shorts upload...');
       try {
         results.youtube = await uploadToYouTube(context, nextVideo, metadata);
-        log('[+] YouTube Shorts upload complete!');
+        if (results.youtube?.success) {
+          log('[+] YouTube Shorts upload complete!');
+        } else {
+          log(`[YouTube Warning] Upload returned false: ${results.youtube?.error || 'Unknown error'}`);
+        }
       } catch (ytErr) {
         log(`[YouTube Warning] ${ytErr.message}`);
         results.youtube = { success: false, error: ytErr.message };
@@ -192,7 +196,11 @@ async function run() {
       log('[*] Initiating Instagram Reel upload...');
       try {
         results.instagram = await uploadToInstagram(context, nextVideo, metadata);
-        log('[+] Instagram Reel upload complete!');
+        if (results.instagram?.success) {
+          log('[+] Instagram Reel upload complete!');
+        } else {
+          log(`[Instagram Warning] Upload returned false: ${results.instagram?.error || 'Unknown error'}`);
+        }
       } catch (igErr) {
         log(`[Instagram Warning] ${igErr.message}`);
         results.instagram = { success: false, error: igErr.message };
@@ -216,7 +224,7 @@ async function run() {
       results
     });
     fs.writeFileSync(HISTORY_PATH, JSON.stringify(history, null, 2));
-    log('[+] Daily run successfully completed and saved to history!');
+    log(`[+] Daily run successfully completed for ${filename} and saved to history! (YouTube: ${results.youtube?.success ? 'Success' : 'Skipped/Failed'}, Instagram: ${results.instagram?.success ? 'Success' : 'Skipped/Failed'})`);
   } else {
     log('[-] Upload could not complete on either platform. Video kept at front of queue for retry.');
   }
