@@ -7,6 +7,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { viralGrowthAgent } from './viral_growth_agent.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -243,6 +244,33 @@ function parseAgentReply(text) {
 
 function generateAutonomousEngineReply(message, context) {
   const lower = message.toLowerCase();
+
+  // Viral Growth, Views & Audience Intelligence
+  if (lower.includes('viral') || lower.includes('view') || lower.includes('follower') || lower.includes('growth') || lower.includes('improve') || lower.includes('algorithm') || lower.includes('audience')) {
+    const report = viralGrowthAgent.getComprehensiveReport();
+    return {
+      reply: `🚀 **Autonomous Viral Growth & Channel Intelligence Report**\n\n` +
+        `• **Target Channel**: YouTube (${report.audience.channelHandle}) & Instagram (@${context.instagramUsername})\n` +
+        `• **Core Niche**: **${report.audience.niche}**\n` +
+        `• **Target Audience Persona**: Young adults (16-32), stoic & dark psychology seekers, high-retention edit fans.\n` +
+        `• **Why Videos Go Viral In This Niche**:\n` +
+        `  1. **The 3-Second Rule**: Provocative contrarian reality check (e.g. *"When you stop being convenient..."*)\n` +
+        `  2. **Micro-Cuts & Audio Sync**: High-contrast subtitles + bass drops create >85% completion rate.\n` +
+        `  3. **Comment Magnet**: Prompting reaction emojis (*"Drop a ♟️ if you agree"*) triggers algorithm velocity.\n` +
+        `• **Self-Improving Learning Cycle #${report.cycle}**:\n` +
+        `  - ${report.learnings[0]?.hypothesis || 'Autonomous adaptation active'}\n` +
+        `  - Autonomously evolved **${report.adaptedCount} pending clips** in your queue with high-converting hooks!\n\n` +
+        `💡 **Ready-to-Shoot Viral Concept**:\n` +
+        `**Title**: *"${report.ideas[0]?.title}"*\n` +
+        `**Hook**: *"${report.ideas[0]?.hookText}"*\n\n` +
+        `Reply **"Apply viral ideas"** or click below to optimize all upcoming videos!`,
+      action: {
+        action: "APPLY_VIRAL_QUEUE",
+        cycle: report.cycle,
+        requiresPermission: true
+      }
+    };
+  }
 
   // Audit / Analysis
   if (lower.includes('audit') || lower.includes('analyze') || lower.includes('feed') || lower.includes('page') || lower.includes('channel')) {

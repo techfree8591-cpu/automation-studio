@@ -13,9 +13,13 @@ const LOGS_DIR = path.join(ROOT_DIR, 'logs');
 
 export async function uploadToInstagram(context, videoPath, metadata) {
   console.log('\n[Instagram] Starting upload for:', videoPath);
-  const page = await context.newPage();
+  if (!context) {
+    return { success: false, error: 'Browser context is not available.' };
+  }
 
+  let page = null;
   try {
+    page = await context.newPage();
     console.log('[Instagram] Navigating to Instagram...');
     await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(4000);
@@ -118,8 +122,10 @@ export async function uploadToInstagram(context, videoPath, metadata) {
 
   } catch (err) {
     console.error('[Instagram] Upload failed:', err.message);
-    await page.screenshot({ path: path.join(LOGS_DIR, `instagram_error_${Date.now()}.png`) }).catch(() => {});
-    await page.close();
+    if (page) {
+      await page.screenshot({ path: path.join(LOGS_DIR, `instagram_error_${Date.now()}.png`) }).catch(() => {});
+      await page.close().catch(() => {});
+    }
     return { success: false, error: err.message };
   }
 }

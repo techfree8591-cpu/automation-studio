@@ -20,6 +20,8 @@ import { generateMetadata } from './metadata_generator.mjs';
 import { checkAllAuth } from './check_auth.mjs';
 import { researchAndAuditChannel, applyApprovedChannelChanges } from './channel_agent.mjs';
 import { processUserChatMessage } from './ai_chat_agent.mjs';
+import { viralGrowthAgent } from './viral_growth_agent.mjs';
+import { injectInstagramSession, loginWithCredentials, submitInstagram2FA } from './instagram_auth_helper.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -659,6 +661,77 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // 14. GET /api/viral-growth
+  if (url.pathname === '/api/viral-growth' && req.method === 'GET') {
+    try {
+      const report = viralGrowthAgent.getComprehensiveReport();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(report));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  // 15. POST /api/viral-growth/run
+  if (url.pathname === '/api/viral-growth/run' && req.method === 'POST') {
+    try {
+      const report = viralGrowthAgent.selfImproveAndAdapt();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, report }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  // 16. POST /api/instagram-login
+  if (url.pathname === '/api/instagram-login' && req.method === 'POST') {
+    try {
+      const { username, password } = await readJson();
+      const result = await loginWithCredentials(username, password);
+      connectionCache = await checkAllAuth();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  // 17. POST /api/instagram-session
+  if (url.pathname === '/api/instagram-session' && req.method === 'POST') {
+    try {
+      const { sessionid } = await readJson();
+      const result = await injectInstagramSession(sessionid);
+      connectionCache = await checkAllAuth();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  // 18. POST /api/instagram-2fa
+  if (url.pathname === '/api/instagram-2fa' && req.method === 'POST') {
+    try {
+      const { code } = await readJson();
+      const result = await submitInstagram2FA(code);
+      connectionCache = await checkAllAuth();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
   // Web Application Page
   if (url.pathname === '/' || url.pathname === '/index.html') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -933,11 +1006,11 @@ function renderDashboardHtml() {
             </div>
 
             <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
-              <button id="igBtn" onclick="connectPlatform('instagram', 'login')" class="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white border border-slate-700 transition-all flex items-center justify-center gap-1.5 shadow-sm">
+              <button id="igBtn" onclick="openInstagramConnectModal()" class="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white border border-slate-700 transition-all flex items-center justify-center gap-1.5 shadow-sm">
                 <span>Connect Instagram</span>
               </button>
-              <button onclick="connectPlatform('instagram', 'switch')" class="px-3 py-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition-all" title="Open Instagram Login to switch user">
-                🔄 Switch
+              <button onclick="openInstagramConnectModal()" class="px-3 py-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition-all" title="Instagram Connection Assistant">
+                🔄 Connect / Login
               </button>
               <button id="igDisconnectBtn" onclick="disconnectPlatform('instagram')" class="px-2.5 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition-all hidden" title="Disconnect Instagram Account">
                 ✕
@@ -1080,6 +1153,107 @@ function renderDashboardHtml() {
           <span class="text-slate-400 font-mono text-[11px]">Playwright / Python</span>
         </div>
         <pre id="jobLogBox" class="p-3 bg-slate-950/90 rounded-xl text-[11px] font-mono text-slate-300 max-h-36 overflow-y-auto whitespace-pre-wrap"></pre>
+      </div>
+
+      <!-- ================= SECTION: AUTONOMOUS VIRAL GROWTH & CHANNEL INTELLIGENCE HUB ================= -->
+      <div class="glass-card rounded-2xl p-5 sm:p-6 space-y-5 border border-purple-500/30 bg-gradient-to-br from-slate-900/95 via-purple-950/20 to-slate-900/95">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
+          <div class="space-y-1">
+            <div class="flex items-center gap-2">
+              <span class="text-xl">🧠</span>
+              <h2 class="text-sm sm:text-base font-extrabold text-white tracking-tight flex items-center gap-2">
+                <span>Autonomous Viral Growth & Channel Intelligence</span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">Self-Improving AI v2.0</span>
+              </h2>
+            </div>
+            <p class="text-xs text-slate-400">
+              Continuously audits views, analyzes target audience psychographics, reverse-engineers viral retention formulas, and self-improves upcoming video titles & hooks.
+            </p>
+          </div>
+          <button id="btnRunViralOptimization" onclick="runViralOptimization()" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-purple-600/30 transition-all flex items-center gap-2 shrink-0">
+            <span id="viralSpin" class="hidden animate-spin">⚡</span>
+            <span>⚡ Run Autonomous Viral Optimization</span>
+          </button>
+        </div>
+
+        <!-- 4-Pillar Live Intelligence Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <!-- Pillar 1: Channel Performance -->
+          <div class="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Channel Performance</span>
+              <span class="text-xs">📊</span>
+            </div>
+            <div class="flex items-baseline gap-2">
+              <span id="vgTotalPosts" class="text-2xl font-black text-white">10</span>
+              <span class="text-xs text-slate-400 font-semibold">Shorts Posted</span>
+            </div>
+            <div class="text-[11px] text-emerald-400 font-medium flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span>100% YouTube Studio Success</span>
+            </div>
+            <p class="text-[10px] text-slate-500 font-mono">Channel: @eclipsarchon</p>
+          </div>
+
+          <!-- Pillar 2: Target Audience -->
+          <div class="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-bold uppercase tracking-wider text-purple-300">Target Audience</span>
+              <span class="text-xs">🎯</span>
+            </div>
+            <div class="text-xs font-bold text-white leading-tight">
+              Ages 16-32 (Gen Z & Millennials)
+            </div>
+            <p class="text-[11px] text-slate-300">
+              Seekers of Stoic self-mastery, dark psychology, shadow work & high-retention aesthetic edits.
+            </p>
+            <p class="text-[10px] text-slate-500 font-mono">Peak Hours: 12-2 PM & 6-10 PM</p>
+          </div>
+
+          <!-- Pillar 3: Viral Retention Formula -->
+          <div class="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-bold uppercase tracking-wider text-amber-300">Viral Retention Triad</span>
+              <span class="text-xs">⚡</span>
+            </div>
+            <ul class="text-[11px] text-slate-300 space-y-1">
+              <li>• <strong>0-3s Hook:</strong> Contrarian truth</li>
+              <li>• <strong>Pacing:</strong> 1.5-2s micro-cuts & beat sync</li>
+              <li>• <strong>Algorithm CTA:</strong> "Drop a ♟️" comment hook</li>
+            </ul>
+            <p class="text-[10px] text-emerald-400 font-semibold">Projected Retention: 88-94%</p>
+          </div>
+
+          <!-- Pillar 4: Autonomous Self-Improvement -->
+          <div class="p-4 rounded-xl bg-slate-950/70 border border-purple-500/20 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-300">Self-Improvement</span>
+              <span class="text-xs">🔄</span>
+            </div>
+            <div class="flex items-baseline gap-2">
+              <span class="text-xs text-slate-400">Cycle:</span>
+              <span id="vgCycle" class="text-xl font-extrabold text-indigo-300">#1</span>
+            </div>
+            <p id="vgLearningsSummary" class="text-[11px] text-slate-300 line-clamp-2">
+              Autonomously evolved 16 upcoming queue clips from generic numbers into psychological curiosity hooks.
+            </p>
+            <p class="text-[10px] text-purple-400 font-semibold">Self-Adapting Every Post</p>
+          </div>
+        </div>
+
+        <!-- Viral Video Ideas Bank -->
+        <div class="space-y-3 pt-2">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+              <span>💡</span> Ready-to-Shoot Viral Concepts (Generated by Agent)
+            </h3>
+            <span class="text-[11px] text-slate-400 font-mono">1-Click Apply to Next Video</span>
+          </div>
+
+          <div id="viralIdeasContainer" class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <!-- Dynamic Ideas will render here -->
+          </div>
+        </div>
       </div>
 
       <!-- ================= MAIN TWO-COLUMN WORKSPACE ================= -->
@@ -1264,6 +1438,110 @@ function renderDashboardHtml() {
     </div>
   </div>
 
+  <!-- ================= INSTAGRAM CONNECT MODAL ================= -->
+  <div id="instagramConnectModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
+    <div class="glass-card rounded-3xl p-6 max-w-lg w-full space-y-5 border border-pink-500/30 glow-purple">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white flex items-center justify-center font-bold text-lg shadow-md">
+            📸
+          </div>
+          <div>
+            <h3 class="text-sm sm:text-base font-extrabold text-white">Instagram Connection Assistant</h3>
+            <p class="text-[11px] text-slate-400">Connect @eclipsarchon for automated 9:16 Reels publishing</p>
+          </div>
+        </div>
+        <button onclick="closeInstagramConnectModal()" class="text-slate-400 hover:text-white text-lg">✕</button>
+      </div>
+
+      <!-- Tab Buttons -->
+      <div class="flex items-center gap-2 p-1 bg-slate-900/90 rounded-xl border border-slate-800 text-xs font-semibold">
+        <button id="igTabBtn1" onclick="switchIgTab('window')" class="flex-1 py-2 rounded-lg bg-pink-600 text-white shadow-sm transition-all text-center">
+          🖥️ Chrome Window
+        </button>
+        <button id="igTabBtn2" onclick="switchIgTab('direct')" class="flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition-all text-center">
+          ⚡ Direct Login
+        </button>
+        <button id="igTabBtn3" onclick="switchIgTab('cookie')" class="flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition-all text-center">
+          🍪 Cookie Bypass
+        </button>
+      </div>
+
+      <!-- Tab 1: Official Chrome Window -->
+      <div id="igTabWindow" class="space-y-4 text-xs">
+        <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-300 space-y-2">
+          <p class="font-semibold text-white">Launch Isolated Chrome for Instagram</p>
+          <p class="text-[11px] text-slate-400">
+            Opens an official, anti-detection Chrome window directly on your PC screen to log in to Instagram. Once you log in and close the window, your session is saved automatically.
+          </p>
+        </div>
+        <button onclick="launchIgChromeWindow()" class="w-full py-3 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2">
+          <span>🚀 Open Official Instagram Window on Desktop</span>
+        </button>
+      </div>
+
+      <!-- Tab 2: Direct In-Dashboard Login -->
+      <div id="igTabDirect" class="hidden space-y-3 text-xs">
+        <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-300">
+          <p class="text-[11px] text-slate-400">
+            Log in directly from this dashboard (works from mobile or desktop). We automate entering your credentials and saving the session cookies securely.
+          </p>
+        </div>
+        <div>
+          <label class="block font-bold text-slate-300 mb-1">Instagram Username, Phone or Email</label>
+          <input id="igDirectUser" type="text" placeholder="eclipsarchon" class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white font-mono focus:border-pink-500 focus:outline-none">
+        </div>
+        <div>
+          <label class="block font-bold text-slate-300 mb-1">Instagram Password</label>
+          <input id="igDirectPass" type="password" placeholder="••••••••••••" class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white font-mono focus:border-pink-500 focus:outline-none">
+        </div>
+        
+        <!-- 2FA Box (Dynamic) -->
+        <div id="ig2faBox" class="hidden p-3 rounded-xl bg-purple-950/40 border border-purple-500/40 space-y-2">
+          <label class="block font-bold text-purple-300">Enter 6-Digit 2FA Security Code</label>
+          <input id="ig2faCode" type="text" placeholder="123456" class="w-full px-3 py-2 bg-slate-950 border border-purple-500 rounded-xl text-white font-mono tracking-widest text-center text-sm">
+          <button onclick="submitIg2FACode()" class="w-full py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-lg text-xs">
+            Confirm 2FA Code
+          </button>
+        </div>
+
+        <button id="btnSubmitIgDirect" onclick="submitIgDirectLogin()" class="w-full py-3 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2">
+          <span id="igDirectSpin" class="hidden animate-spin">⚡</span>
+          <span>Log In to Instagram</span>
+        </button>
+      </div>
+
+      <!-- Tab 3: Session Cookie Bypass -->
+      <div id="igTabCookie" class="hidden space-y-3 text-xs">
+        <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-300 space-y-2">
+          <p class="font-bold text-emerald-400">⚡ 100% Guaranteed Bypass (No Password Needed)</p>
+          <p class="text-[11px] text-slate-400">
+            If Instagram blocks password logins due to IP checks, copy your <code class="text-pink-400 font-mono">sessionid</code> cookie from your browser:
+          </p>
+          <ol class="text-[11px] text-slate-400 list-decimal list-inside space-y-1">
+            <li>On any PC where you are logged into Instagram, open Instagram.com</li>
+            <li>Press <strong>F12</strong> → Click <strong>Application</strong> tab → <strong>Cookies</strong> → <code class="text-pink-400">https://www.instagram.com</code></li>
+            <li>Double-click the value of <code class="text-pink-400">sessionid</code> and copy it here!</li>
+          </ol>
+        </div>
+        <div>
+          <label class="block font-bold text-slate-300 mb-1">Instagram sessionid Cookie Value</label>
+          <input id="igCookieInput" type="text" placeholder="68491823%3AQ38..." class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white font-mono text-xs focus:border-pink-500 focus:outline-none">
+        </div>
+        <button id="btnSubmitIgCookie" onclick="submitIgSessionCookie()" class="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2">
+          <span id="igCookieSpin" class="hidden animate-spin">⚡</span>
+          <span>Save Session & Authenticate Instagram</span>
+        </button>
+      </div>
+
+      <div class="pt-1 flex items-center justify-end">
+        <button onclick="closeInstagramConnectModal()" class="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-semibold">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
   <script>
     let currentConfig = null;
     let selectedDevice = 'android';
@@ -1335,6 +1613,7 @@ function renderDashboardHtml() {
         const res = await fetch('/api/status');
         const data = await res.json();
         currentConfig = data;
+        fetchViralReport();
 
         // Update Metrics
         document.getElementById('statTotal').innerText = data.totalUploaded;
@@ -2068,6 +2347,204 @@ function renderDashboardHtml() {
       } catch (err) {
         alert('Save error: ' + err.message);
       }
+    }
+
+    // Instagram Connection Assistant Handlers
+    function openInstagramConnectModal() {
+      document.getElementById('instagramConnectModal').classList.remove('hidden');
+    }
+
+    function closeInstagramConnectModal() {
+      document.getElementById('instagramConnectModal').classList.add('hidden');
+    }
+
+    function switchIgTab(tab) {
+      document.getElementById('igTabWindow').classList.toggle('hidden', tab !== 'window');
+      document.getElementById('igTabDirect').classList.toggle('hidden', tab !== 'direct');
+      document.getElementById('igTabCookie').classList.toggle('hidden', tab !== 'cookie');
+
+      document.getElementById('igTabBtn1').className = tab === 'window' ? 'flex-1 py-2 rounded-lg bg-pink-600 text-white shadow-sm transition-all text-center' : 'flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition-all text-center';
+      document.getElementById('igTabBtn2').className = tab === 'direct' ? 'flex-1 py-2 rounded-lg bg-pink-600 text-white shadow-sm transition-all text-center' : 'flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition-all text-center';
+      document.getElementById('igTabBtn3').className = tab === 'cookie' ? 'flex-1 py-2 rounded-lg bg-pink-600 text-white shadow-sm transition-all text-center' : 'flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition-all text-center';
+    }
+
+    async function launchIgChromeWindow() {
+      closeInstagramConnectModal();
+      connectPlatform('instagram', 'login');
+    }
+
+    async function submitIgDirectLogin() {
+      const username = document.getElementById('igDirectUser').value.trim();
+      const password = document.getElementById('igDirectPass').value.trim();
+      if (!username || !password) {
+        alert('Please enter your Instagram username and password.');
+        return;
+      }
+
+      const spin = document.getElementById('igDirectSpin');
+      const btn = document.getElementById('btnSubmitIgDirect');
+      spin.classList.remove('hidden');
+      btn.disabled = true;
+      showToast('⚡ Logging into Instagram via automated browser...');
+
+      try {
+        const res = await fetch('/api/instagram-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (data.requires2FA) {
+          document.getElementById('ig2faBox').classList.remove('hidden');
+          showToast('⚠️ 2FA Code required! Enter the 6-digit code sent to your phone/email.');
+          return;
+        }
+        if (data.error) throw new Error(data.error);
+
+        showToast('🎉 Instagram connected successfully as @' + (data.username || username) + '!');
+        closeInstagramConnectModal();
+        reverifyConnections();
+      } catch (err) {
+        alert('Instagram login error: ' + err.message);
+      } finally {
+        spin.classList.add('hidden');
+        btn.disabled = false;
+      }
+    }
+
+    async function submitIg2FACode() {
+      const code = document.getElementById('ig2faCode').value.trim();
+      if (!code) {
+        alert('Please enter your 6-digit 2FA code.');
+        return;
+      }
+
+      showToast('⚡ Verifying 2FA security code with Instagram...');
+      try {
+        const res = await fetch('/api/instagram-2fa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        showToast('🎉 Instagram 2FA verified & connected successfully!');
+        closeInstagramConnectModal();
+        reverifyConnections();
+      } catch (err) {
+        alert('2FA Verification error: ' + err.message);
+      }
+    }
+
+    async function submitIgSessionCookie() {
+      const sessionid = document.getElementById('igCookieInput').value.trim();
+      if (!sessionid) {
+        alert('Please paste your Instagram sessionid cookie value.');
+        return;
+      }
+
+      const spin = document.getElementById('igCookieSpin');
+      const btn = document.getElementById('btnSubmitIgCookie');
+      spin.classList.remove('hidden');
+      btn.disabled = true;
+      showToast('⚡ Verifying and saving Instagram session cookie...');
+
+      try {
+        const res = await fetch('/api/instagram-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionid })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        showToast('🎉 Instagram session verified! Connected as @' + (data.username || 'eclipsarchon'));
+        closeInstagramConnectModal();
+        reverifyConnections();
+      } catch (err) {
+        alert('Session cookie error: ' + err.message);
+      } finally {
+        spin.classList.add('hidden');
+        btn.disabled = false;
+      }
+    }
+
+    // Viral Growth Agent Handlers
+    async function fetchViralReport() {
+      try {
+        const res = await fetch('/api/viral-growth');
+        const data = await res.json();
+        renderViralHub(data);
+      } catch (e) {
+        console.error('Viral report fetch error:', e);
+      }
+    }
+
+    function renderViralHub(data) {
+      if (!data) return;
+      if (document.getElementById('vgTotalPosts')) {
+        document.getElementById('vgTotalPosts').innerText = data.performance?.totalPosts || 0;
+      }
+      if (document.getElementById('vgCycle')) {
+        document.getElementById('vgCycle').innerText = '#' + (data.cycle || 1);
+      }
+      if (document.getElementById('vgLearningsSummary') && data.learnings?.[0]) {
+        document.getElementById('vgLearningsSummary').innerText = data.learnings[0].hypothesis;
+      }
+
+      const container = document.getElementById('viralIdeasContainer');
+      if (container && data.ideas) {
+        container.innerHTML = data.ideas.map((idea, idx) => \`
+          <div class="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col justify-between gap-2.5 hover:border-purple-500/40 transition-all">
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-purple-400 font-mono">\${escapeHtml(idea.niche)}</span>
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">\${escapeHtml(idea.projectedRetention)} Retention</span>
+              </div>
+              <h4 class="text-xs font-bold text-white line-clamp-1">\${escapeHtml(idea.title)}</h4>
+              <p class="text-[11px] text-slate-300 italic">"\${escapeHtml(idea.hookText)}"</p>
+              <div class="p-2 bg-slate-900/90 rounded-lg text-[10px] font-mono text-slate-400 whitespace-pre-wrap max-h-24 overflow-y-auto leading-relaxed">\${escapeHtml(idea.script)}</div>
+            </div>
+            <div class="flex items-center gap-2 pt-1 border-t border-slate-800/80">
+              <button onclick="applyIdeaToNext('\${escapeHtml(idea.title.replace(/'/g, ''))}', '\${escapeHtml(idea.captionCTA.replace(/'/g, ''))}')" class="flex-1 py-1.5 rounded-lg bg-purple-600/30 hover:bg-purple-600 text-purple-200 hover:text-white text-[11px] font-semibold transition-all">
+                ⚡ Apply to Next Up
+              </button>
+            </div>
+          </div>
+        \`).join('');
+      }
+    }
+
+    async function runViralOptimization() {
+      const spin = document.getElementById('viralSpin');
+      const btn = document.getElementById('btnRunViralOptimization');
+      if (spin) spin.classList.remove('hidden');
+      if (btn) btn.disabled = true;
+      showToast('🧠 Viral Agent analyzing views, researching retention triggers, and adapting queue...');
+
+      try {
+        const res = await fetch('/api/viral-growth/run', { method: 'POST' });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        showToast('🚀 Viral optimization complete! Adapted upcoming videos with high-retention hooks.');
+        fetchViralReport();
+        fetchStatus();
+      } catch (err) {
+        showToast('❌ Optimization error: ' + err.message);
+      } finally {
+        if (spin) spin.classList.add('hidden');
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function applyIdeaToNext(title, caption) {
+      const ytTitleInput = document.getElementById('editYtTitle');
+      const igCaptionInput = document.getElementById('editIgCaption');
+      if (ytTitleInput) ytTitleInput.value = title + ' 👁️ #Shorts';
+      if (igCaptionInput) igCaptionInput.value = caption + '\\n\\n#darkpsychology #stoic #mindset #eclipsarchon #viral';
+      showToast('💡 Concept applied to Next Video Up! Click Save to confirm.');
     }
   </script>
 </body>

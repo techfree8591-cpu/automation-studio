@@ -183,17 +183,22 @@ function verifyAndSaveSession() {
     }
   } catch (_) {}
 
-  // Check if profile exists
-  if (fs.existsSync(BROWSER_PROFILE)) {
-    if (targetPlatform === 'youtube') {
-      authData.youtube = true;
-    } else if (targetPlatform === 'instagram') {
-      authData.instagram = true;
-    } else {
-      authData.youtube = true;
-      authData.instagram = true;
-    }
+  // Check actual authentication session cookies in profile
+  const cookiePath = path.join(BROWSER_PROFILE, 'Default', 'Network', 'Cookies');
+  let hasYt = false;
+  let hasIg = false;
+  if (fs.existsSync(cookiePath)) {
+    try {
+      const buf = fs.readFileSync(cookiePath);
+      hasYt = buf.includes(Buffer.from('HSID')) || buf.includes(Buffer.from('SID')) || buf.includes(Buffer.from('LOGIN_INFO'));
+      hasIg = buf.includes(Buffer.from('sessionid')) || buf.includes(Buffer.from('ds_user_id'));
+    } catch (_) {}
   }
+
+  authData.youtube = hasYt || Boolean(authData.youtube);
+  authData.instagram = hasIg;
+  if (!authData.youtubeChannel) authData.youtubeChannel = '@eclipsarchon';
+  if (!authData.instagramUsername) authData.instagramUsername = 'eclipsarchon';
 
   authData.lastVerified = new Date().toISOString();
   authData.status = (authData.youtube || authData.instagram) ? 'connected' : 'disconnected';

@@ -10,6 +10,7 @@ import { chromium } from 'playwright';
 import { generateMetadata } from './metadata_generator.mjs';
 import { uploadToYouTube } from './uploader_youtube.mjs';
 import { uploadToInstagram } from './uploader_instagram.mjs';
+import { viralGrowthAgent } from './viral_growth_agent.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -78,6 +79,15 @@ async function run() {
   if (stagedVideos.length === 0) {
     log('[-] No video files found in reels directory. Exiting.');
     return;
+  }
+
+  // Run Autonomous Viral Intelligence & Self-Improvement Cycle
+  log('[*] Running Autonomous Viral Growth & Self-Improvement cycle...');
+  try {
+    const intel = viralGrowthAgent.selfImproveAndAdapt();
+    log(`[+] Viral Agent Cycle #${intel.cycle}: Adapted ${intel.adaptedVideosCount} video hooks for maximum retention!`);
+  } catch (agErr) {
+    log(`[!] Viral Agent notice: ${agErr.message}`);
   }
 
   // Find next unposted video in sequence
@@ -227,6 +237,11 @@ async function run() {
     });
     fs.writeFileSync(HISTORY_PATH, JSON.stringify(history, null, 2));
     log(`[+] Daily run successfully completed for ${filename} and saved to history! (YouTube: ${results.youtube?.success ? 'Success' : 'Skipped/Failed'}, Instagram: ${results.instagram?.success ? 'Success' : 'Skipped/Failed'})`);
+
+    // Trigger post-upload performance learning
+    try {
+      viralGrowthAgent.selfImproveAndAdapt();
+    } catch (_) {}
   } else {
     log('[-] Upload could not complete on either platform. Video kept at front of queue for retry.');
   }
